@@ -1,16 +1,17 @@
 import gymnasium as gym
+import time
 import math
 import random
 import matplotlib
 import matplotlib.pyplot as plt
 from collections import namedtuple, deque
 from itertools import count
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
+start_time = time.time()
 
 env = gym.make("CartPole-v1")
 
@@ -194,7 +195,7 @@ def optimize_model():
 
 
 if torch.cuda.is_available() or torch.backends.mps.is_available():
-    num_episodes = 600
+    num_episodes = 500
 else:
     num_episodes = 50
 
@@ -238,4 +239,59 @@ for i_episode in range(num_episodes):
 print('Complete')
 plot_durations(show_result=True)
 plt.ioff()
+
+
+
+end_time = time.time()
+elapsed_time = end_time - start_time
+print(f"Tempo de processamento: {round(elapsed_time/60,2)} min")
+
 plt.show()
+
+
+torch.save(policy_net.state_dict(), 'dqn_cartpole.pth')
+print("Rede treinada salva como dqn_cartpole.pth")
+
+
+
+print("Iniciando a animação do agente treinado...")
+
+# Crie um novo ambiente para a renderização, pode ser o mesmo ou um novo
+# Se quiser ver apenas o agente jogando sem coletar dados, não precisa de um novo 'env'
+# Mas é uma boa prática para separação de preocupações ou se você fechou o 'env' anterior
+eval_env = gym.make("CartPole-v1", render_mode='human') # 'human' renderiza a janela
+
+num_eval_episodes = 5 # Quantos episódios de demonstração você quer ver
+
+for i_episode_eval in range(num_eval_episodes):
+    state, info = eval_env.reset()
+    state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+    total_reward = 0
+
+    for t_eval in count():
+        # Ação agora é sempre selecionada de forma gananciosa (sem exploração)
+        # para ver a performance da política aprendida
+        with torch.no_grad():
+            action = policy_net(state).max(1).indices.view(1, 1)
+
+        observation, reward, terminated, truncated, _ = eval_env.step(action.item())
+        total_reward += reward # Acumula a recompensa para este episódio
+
+        done = terminated or truncated
+
+        if terminated:
+            next_state = None
+        else:
+            next_state = torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0)
+
+        state = next_state
+
+        # eval_env.render() # A chamada do make com render_mode='human' já cuida disso
+
+        if done:
+            print(f"Episódio de Avaliação {i_episode_eval + 1} finalizado. Duração: {t_eval + 1}, Recompensa Total: {total_reward}")
+            break
+
+eval_env.close() # Feche o ambiente de avaliação ao terminar
+print("Animação completa.")
+
